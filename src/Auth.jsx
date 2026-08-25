@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from './supabase';
-import { ShieldCheck, Mail, Lock, LogIn, UserPlus, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, LogIn, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function Auth({ onAuthSuccess }) {
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
@@ -18,15 +18,25 @@ export default function Auth({ onAuthSuccess }) {
 
     try {
       if (mode === 'signup') {
+        // Redirigir siempre al dominio actual (Netlify o localhost)
+        const redirectUrl = window.location.origin;
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: redirectUrl,
+          },
         });
 
         if (error) throw error;
 
-        // Si la verificación de correo está habilitada en Supabase (por defecto lo está),
-        // data.user estará creado pero requerirá confirmación por email.
+        // Si la sesión se crea inmediatamente (si confirm email está desactivado en Supabase)
+        if (data.session) {
+          if (onAuthSuccess) onAuthSuccess(data.session);
+          return;
+        }
+
         setSuccessMsg(
           '¡Cuenta creada exitosamente! 📧 Se ha enviado un correo de verificación. Por favor revisa tu bandeja de entrada para activar tu cuenta antes de iniciar sesión.'
         );
@@ -55,6 +65,8 @@ export default function Auth({ onAuthSuccess }) {
         msg = 'Este correo electrónico ya está registrado. Intenta iniciar sesión.';
       } else if (msg.includes('Password should be at least')) {
         msg = 'La contraseña debe tener al menos 6 caracteres.';
+      } else if (msg.toLowerCase().includes('rate limit')) {
+        msg = '⚠️ Límite de envíos de correo alcanzado temporalmente en Supabase. Espera unos minutos antes de intentar registrar otra cuenta o desactiva "Confirm email" en el panel de Supabase.';
       }
       setErrorMsg(msg);
     } finally {
@@ -170,7 +182,7 @@ export default function Auth({ onAuthSuccess }) {
               </>
             ) : (
               <>
-                <span>Registrarme con Verificación</span>
+                <span>Registrarme</span>
                 <UserPlus size={16} />
               </>
             )}
