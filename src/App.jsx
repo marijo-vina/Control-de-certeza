@@ -26,25 +26,23 @@ import {
   Edit2,
   RotateCcw,
   List,
-  ArrowRightLeft,
   Info,
-  DollarSign,
   Check,
   CalendarDays,
   Clock,
-  BellRing,
+  CreditCard,
 } from 'lucide-react';
 import { supabase } from './supabase';
 import Auth from './Auth';
 
-// ─── Helpers de Moneda Mexicana (MXN) y Fechas ─────────────────────────────
+// ─── Helpers de Moneda Mexicana y Agrupación de Miles ───────────────────────
 const MES_ACTUAL = new Date().toLocaleString('es-MX', { month: 'long' });
 const MES_CAPITALIZADO = MES_ACTUAL.charAt(0).toUpperCase() + MES_ACTUAL.slice(1);
 const ANIO_ACTUAL = new Date().getFullYear();
-const NUM_MES_ACTUAL = new Date().getMonth(); // 0-11
+const NUM_MES_ACTUAL = new Date().getMonth();
 const HOY_DIA = new Date().getDate();
 
-// Formato de Moneda Mexicana
+// Formato de Moneda Mexicana para Mostrar en Tarjetas y Textos
 function formatMXN(n, showDecimals = false) {
   const num = typeof n === 'number' ? n : parseFloat(n) || 0;
   return num.toLocaleString('es-MX', {
@@ -55,19 +53,26 @@ function formatMXN(n, showDecimals = false) {
   });
 }
 
-// Sanitizar input numérico MXN
-function sanitizeNumber(val) {
-  if (!val) return '';
-  // permitir sólo dígitos y un solo punto decimal
-  const clean = val.toString().replace(/[^0-9.]/g, '');
+// Agrupar con comas en tiempo real mientras el usuario escribe en los inputs
+function formatInputNumber(value) {
+  if (!value && value !== 0) return '';
+  const clean = value.toString().replace(/[^0-9.]/g, '');
   const parts = clean.split('.');
-  if (parts.length > 2) {
-    return parts[0] + '.' + parts.slice(1).join('');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  if (parts.length > 1) {
+    return parts[0] + '.' + parts[1].slice(0, 2);
   }
-  return clean;
+  return parts[0];
 }
 
-// Íconos y definiciones por tipo de apartado
+// Obtener valor numérico real desde un string con comas
+function parseInputNumber(value) {
+  if (!value) return 0;
+  const clean = value.toString().replace(/,/g, '');
+  return parseFloat(clean) || 0;
+}
+
+// Tipos de apartado
 const TIPO_META = {
   objetivo: {
     label: 'Objetivo',
@@ -77,7 +82,7 @@ const TIPO_META = {
     bg: 'bg-sky-500/10',
     border: 'border-sky-500/30',
     barColor: 'bg-sky-500',
-    completedText: '✓ Meta completada',
+    completedText: '✓ Meta alcanzada',
     completedClass: 'text-sky-400',
   },
   compra: {
@@ -88,7 +93,7 @@ const TIPO_META = {
     bg: 'bg-violet-500/10',
     border: 'border-violet-500/30',
     barColor: 'bg-violet-500',
-    completedText: '✓ Ahorro listo para compra',
+    completedText: '✓ Ahorro completo',
     completedClass: 'text-violet-400',
   },
   gasto_recurrente: {
@@ -133,13 +138,13 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('hoy'); // 'hoy' | 'apartados' | 'futuro' | 'calendario'
 
-  // Modales Principales
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Modales
+  const [isModalOpen, setIsModalOpen] = useState(false); // Modal Registro Rápido / Nuevo Movimiento
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [isTxHistoryOpen, setIsTxHistoryOpen] = useState(false);
   const [isBaseBurnModalOpen, setIsBaseBurnModalOpen] = useState(false);
 
-  // Modal Apartado (Crear / Editar)
+  // Modal Apartado
   const [isApartadoModalOpen, setIsApartadoModalOpen] = useState(false);
   const [editingApartadoId, setEditingApartadoId] = useState(null);
   const [apName, setApName] = useState('');
@@ -147,21 +152,21 @@ export default function App() {
   const [apCategory, setApCategory] = useState('General');
   const [apType, setApType] = useState('objetivo');
 
-  // Modal Fondeo / Transferencia de Apartado (Abonar o Retirar)
+  // Modal Fondeo (Abonar / Retirar)
   const [isFundModalOpen, setIsFundModalOpen] = useState(false);
   const [fundingApartado, setFundingApartado] = useState(null);
-  const [fundAction, setFundAction] = useState('abonar'); // 'abonar' | 'retirar'
+  const [fundAction, setFundAction] = useState('abonar');
   const [fundAmount, setFundAmount] = useState('');
   const [fundError, setFundError] = useState('');
 
-  // Modal Ingreso Variable (Crear / Editar)
+  // Modal Ingreso Unificado (Crear / Editar / Proyectar)
   const [isIngresoModalOpen, setIsIngresoModalOpen] = useState(false);
   const [editingIngresoId, setEditingIngresoId] = useState(null);
   const [ingName, setIngName] = useState('');
   const [ingAmount, setIngAmount] = useState('');
   const [ingCertainty, setIngCertainty] = useState('posible');
   const [ingDate, setIngDate] = useState(new Date().toISOString().split('T')[0]);
-  const [ingPeriod, setIngPeriod] = useState('unico'); // 'unico' | 'semanal' | 'quincenal' | 'mensual'
+  const [ingPeriod, setIngPeriod] = useState('unico');
 
   // Modal Compromiso (Crear / Editar)
   const [isCompromisoModalOpen, setIsCompromisoModalOpen] = useState(false);
@@ -172,16 +177,18 @@ export default function App() {
   const [compCurrentMonth, setCompCurrentMonth] = useState('1');
   const [compTotalMonths, setCompTotalMonths] = useState('12');
 
-  // Modal Registro Rápido Movimiento
+  // Modal Registro Rápido Movimiento (+)
   const [txType, setTxType] = useState('gasto');
   const [txAmount, setTxAmount] = useState('');
   const [txConcept, setTxConcept] = useState('');
   const [txOrigin, setTxOrigin] = useState('disponible');
   const [txCertainty, setTxCertainty] = useState('confirmado');
+  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
+  const [txPeriod, setTxPeriod] = useState('unico');
 
-  // Modal Ajuste Saldo Real
+  // Modal Ajuste Saldo
   const [realBalance, setRealBalance] = useState('');
-  const [monthlyBurnInput, setMonthlyBurnInput] = useState('4000');
+  const [monthlyBurnInput, setMonthlyBurnInput] = useState('4,000');
 
   // Escenario manual
   const [scenarioInput, setScenarioInput] = useState('');
@@ -226,8 +233,8 @@ export default function App() {
       const mainCfg = sRes.data?.find((s) => s.key === 'main_config')?.value || {};
       
       setData({
-        totalMoney: mainCfg.totalMoney ?? 0,
-        monthlyBaseBurn: mainCfg.monthlyBaseBurn ?? 4000,
+        totalMoney: Number(mainCfg.totalMoney) || 0,
+        monthlyBaseBurn: Number(mainCfg.monthlyBaseBurn) >= 0 ? Number(mainCfg.monthlyBaseBurn) : 4000,
         apartados: (aRes.data || []).map((a) => ({
           id: a.id,
           name: a.name,
@@ -269,7 +276,7 @@ export default function App() {
     }
   }
 
-  // Cargar plantilla demo si el usuario lo solicita explícitamente
+  // Cargar plantilla demo
   async function seedTemplateData() {
     if (!session?.user) return;
     const uid = session.user.id;
@@ -302,7 +309,7 @@ export default function App() {
     }
   }
 
-  // Vaciar todos los datos para empezar de cero
+  // Vaciar todos los datos
   async function handleResetUserData() {
     if (!session?.user) return;
     if (!window.confirm('¿Estás seguro de vaciar todos tus datos para empezar en cero? Esta acción borrará tus movimientos, apartados e ingresos.')) return;
@@ -341,7 +348,7 @@ export default function App() {
     return <Auth onAuthSuccess={(sess) => setSession(sess)} />;
   }
 
-  // ─── Cálculos Clave ──────────────────────────────────────────────────────
+  // ─── Cálculos Clave del Sistema ──────────────────────────────────────────
   const totalApartados = data.apartados.reduce((s, a) => s + a.current, 0);
   const totalCompromisosMes = data.compromisos.reduce((s, c) => s + c.amount, 0);
   const disponibleLibre = Math.max(0, data.totalMoney - totalApartados - totalCompromisosMes);
@@ -374,19 +381,19 @@ export default function App() {
   }
 
   const SEMAFORO_CONFIG = {
-    riesgo: { emoji: '🔴', label: 'Riesgo', desc: 'Los ingresos seguros no cubren tu mínimo de supervivencia.', color: 'text-red-400', dot: 'bg-red-400' },
-    transicion: { emoji: '🟡', label: 'Transición', desc: 'Cubres lo básico, pero los objetivos aún dependen de ingresos variables.', color: 'text-amber-400', dot: 'bg-amber-400' },
+    riesgo: { emoji: '🔴', label: 'Riesgo', desc: 'Tus ingresos seguros no cubren tu supervivencia básica.', color: 'text-red-400', dot: 'bg-red-400' },
+    transicion: { emoji: '🟡', label: 'Transición', desc: 'Cubres lo básico, pero tus metas aún dependen de ingresos variables.', color: 'text-amber-400', dot: 'bg-amber-400' },
     estable: { emoji: '🟢', label: 'Estable', desc: 'Tus ingresos seguros cubren tu supervivencia y compromisos.', color: 'text-emerald-400', dot: 'bg-emerald-400' },
     progreso: { emoji: '🔵', label: 'Progreso', desc: 'Tienes margen holgado para avanzar en tus metas.', color: 'text-sky-400', dot: 'bg-sky-400' },
   };
   const sc = SEMAFORO_CONFIG[semaforo] || SEMAFORO_CONFIG.riesgo;
 
-  const scenarioAmount = parseFloat(scenarioInput) || 0;
+  const scenarioAmount = parseInputNumber(scenarioInput);
   const scenarioMargen = scenarioAmount - minimoMensual;
 
-  // ─── HANDLERS CRUD Y FONDEO ──────────────────────────────────────────────
+  // ─── HANDLERS UNIFICADOS ─────────────────────────────────────────────────
 
-  // 1. Crear / Editar Apartados (Solo pide Monto a Gastar/Presupuesto)
+  // 1. Apartados
   function handleOpenNewApartado() {
     setEditingApartadoId(null);
     setApName('');
@@ -399,7 +406,7 @@ export default function App() {
   function handleOpenEditApartado(ap) {
     setEditingApartadoId(ap.id);
     setApName(ap.name);
-    setApTarget(ap.target.toString());
+    setApTarget(formatInputNumber(ap.target));
     setApCategory(ap.category || 'General');
     setApType(ap.type || 'objetivo');
     setIsApartadoModalOpen(true);
@@ -409,11 +416,10 @@ export default function App() {
     e.preventDefault();
     if (!session?.user) return;
     const uid = session.user.id;
-    const targetNum = parseFloat(apTarget) || 0;
+    const targetNum = parseInputNumber(apTarget);
     if (targetNum <= 0) return;
 
     if (editingApartadoId) {
-      // Mantener current actual al editar
       const targetAp = data.apartados.find(a => a.id === editingApartadoId);
       const updatedAp = { name: apName, target: targetNum, current: targetAp?.current || 0, category: apCategory, type: apType };
       setData((prev) => ({
@@ -422,7 +428,6 @@ export default function App() {
       }));
       await supabase.from('apartados').update(updatedAp).eq('id', editingApartadoId).eq('user_id', uid);
     } else {
-      // Nuevo apartado arranca en $0 de fondos
       const newAp = {
         id: `ap_${Date.now()}`,
         user_id: uid,
@@ -460,7 +465,7 @@ export default function App() {
     await supabase.from('apartados').delete().eq('id', id).eq('user_id', uid);
   }
 
-  // 2. Fondeo: Abonar o Retirar Fondos a un Apartado
+  // 2. Fondeo: Abonar o Retirar
   function handleOpenFunding(ap, action = 'abonar') {
     setFundingApartado(ap);
     setFundAction(action);
@@ -473,9 +478,9 @@ export default function App() {
     e.preventDefault();
     if (!fundingApartado || !session?.user) return;
     const uid = session.user.id;
-    const amt = parseFloat(fundAmount);
+    const amt = parseInputNumber(fundAmount);
 
-    if (isNaN(amt) || amt <= 0) {
+    if (amt <= 0) {
       setFundError('Ingresa un monto válido mayor a $0.');
       return;
     }
@@ -492,9 +497,8 @@ export default function App() {
       }));
       await supabase.from('apartados').update({ current: newCurrent }).eq('id', fundingApartado.id).eq('user_id', uid);
     } else {
-      // Retirar
       if (amt > fundingApartado.current) {
-        setFundError(`Solo puedes retirar hasta ${formatMXN(fundingApartado.current)} que tiene este apartado.`);
+        setFundError(`Solo puedes retirar hasta ${formatMXN(fundingApartado.current)} acumulados.`);
         return;
       }
       const newCurrent = Math.max(0, fundingApartado.current - amt);
@@ -508,13 +512,10 @@ export default function App() {
     setIsFundModalOpen(false);
   }
 
-  // 3. Liquidar / Usar Apartado (Ejecutar compra o pago de objetivo)
+  // 3. Liquidar / Usar Fondo de Apartado
   async function handleUseApartado(ap) {
-    if (ap.current <= 0) {
-      alert('Este apartado no tiene fondos acumulados para liquidar.');
-      return;
-    }
-    if (!window.confirm(`¿Deseas liquidar el gasto de ${formatMXN(ap.current)} para "${ap.name}"? Se descontará del saldo total y se registrará en tu historial de gastos.`)) return;
+    if (ap.current <= 0) return;
+    if (!window.confirm(`¿Deseas liquidar el gasto de ${formatMXN(ap.current)} para "${ap.name}"? Se descontará de tu dinero y se registrará en tu historial.`)) return;
 
     const uid = session.user.id;
     const newTotal = Math.max(0, data.totalMoney - ap.current);
@@ -540,7 +541,7 @@ export default function App() {
     await supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } });
   }
 
-  // 4. CRUD Ingresos Variables con Fecha y Periodo
+  // 4. Ingresos (Lógica Unificada: Seguro entra a dinero real + se queda en el Embudo)
   function handleOpenNewIngreso() {
     setEditingIngresoId(null);
     setIngName('');
@@ -554,7 +555,7 @@ export default function App() {
   function handleOpenEditIngreso(ing) {
     setEditingIngresoId(ing.id);
     setIngName(ing.name);
-    setIngAmount(ing.amount.toString());
+    setIngAmount(formatInputNumber(ing.amount));
     setIngCertainty(ing.certainty);
     setIngDate(ing.date || new Date().toISOString().split('T')[0]);
     setIngPeriod(ing.period || 'unico');
@@ -565,7 +566,7 @@ export default function App() {
     e.preventDefault();
     if (!session?.user) return;
     const uid = session.user.id;
-    const amtNum = parseFloat(ingAmount) || 0;
+    const amtNum = parseInputNumber(ingAmount);
     if (amtNum <= 0) return;
 
     const isRec = ingPeriod !== 'unico';
@@ -578,8 +579,9 @@ export default function App() {
       }));
       await supabase.from('ingresos_variables').update(updatedIng).eq('id', editingIngresoId).eq('user_id', uid);
     } else {
+      const newIngId = `ing_${Date.now()}`;
       const newIng = {
-        id: `ing_${Date.now()}`,
+        id: newIngId,
         user_id: uid,
         name: ingName,
         amount: amtNum,
@@ -588,36 +590,62 @@ export default function App() {
         period: ingPeriod,
         is_recurring: isRec,
       };
+
+      // Si se crea como CONFIRMADO / SEGURO, entra de una vez al dinero real en mano
+      let newTotal = data.totalMoney;
+      let newTxList = data.transactions;
+
+      if (ingCertainty === 'confirmado') {
+        newTotal = data.totalMoney + amtNum;
+        const newTx = {
+          id: `tx_${Date.now()}`,
+          user_id: uid,
+          type: 'ingreso',
+          amount: amtNum,
+          concept: `Ingreso: ${ingName}`,
+          date: ingDate,
+          origin: 'Confirmado',
+        };
+        newTxList = [newTx, ...data.transactions];
+        await supabase.from('transactions').insert(newTx);
+        await supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } });
+      }
+
       setData((prev) => ({
         ...prev,
+        totalMoney: newTotal,
+        transactions: newTxList,
         ingresosVariables: [...prev.ingresosVariables, { ...newIng, isRecurring: isRec }],
       }));
+
       await supabase.from('ingresos_variables').insert(newIng);
     }
     setIsIngresoModalOpen(false);
   }
 
-  // Acción Rápida: "¡Ya me pagaron!" (Convertir a Confirmado)
+  // Botón "¡Ya cobré!": Pasa de Esperado/Posible a Confirmado, suma al saldo y SE MANTIENE en el Embudo
   async function handleConfirmPayment(ing) {
     if (!session?.user) return;
-    if (!window.confirm(`¿Confirmar que ya recibiste ${formatMXN(ing.amount)} por "${ing.name}"? Este dinero se sumará a tu saldo disponible.`)) return;
+    if (!window.confirm(`¿Confirmar que ya recibiste ${formatMXN(ing.amount)} por "${ing.name}"? Este dinero se sumará a tu saldo disponible real y pasará a la sección de Ingreso Seguro.`)) return;
 
     const uid = session.user.id;
     const newTotal = data.totalMoney + ing.amount;
+    const hoyStr = new Date().toISOString().split('T')[0];
+
     const newTx = {
       id: `tx_${Date.now()}`,
       user_id: uid,
       type: 'ingreso',
       amount: ing.amount,
       concept: `Cobro: ${ing.name}`,
-      date: new Date().toISOString().split('T')[0],
+      date: hoyStr,
       origin: 'Confirmado',
     };
 
-    // Si es un ingreso único, lo removemos de proyecciones o lo marcamos confirmado
-    const updatedIngresos = ing.period === 'unico'
-      ? data.ingresosVariables.filter((i) => i.id !== ing.id)
-      : data.ingresosVariables.map((i) => (i.id === ing.id ? { ...i, certainty: 'confirmado' } : i));
+    // Actualizar certeza a confirmado para que suba a la sección de Ingreso Seguro
+    const updatedIngresos = data.ingresosVariables.map((i) =>
+      i.id === ing.id ? { ...i, certainty: 'confirmado', date: hoyStr } : i
+    );
 
     setData((prev) => ({
       ...prev,
@@ -628,16 +656,11 @@ export default function App() {
 
     await supabase.from('transactions').insert(newTx);
     await supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } });
-
-    if (ing.period === 'unico') {
-      await supabase.from('ingresos_variables').delete().eq('id', ing.id).eq('user_id', uid);
-    } else {
-      await supabase.from('ingresos_variables').update({ certainty: 'confirmado' }).eq('id', ing.id).eq('user_id', uid);
-    }
+    await supabase.from('ingresos_variables').update({ certainty: 'confirmado', date: hoyStr }).eq('id', ing.id).eq('user_id', uid);
   }
 
   async function handleDeleteIngreso(id) {
-    if (!window.confirm('¿Eliminar este ingreso proyectado?')) return;
+    if (!window.confirm('¿Eliminar este ingreso?')) return;
     const uid = session?.user?.id;
     setData((prev) => ({
       ...prev,
@@ -646,7 +669,7 @@ export default function App() {
     await supabase.from('ingresos_variables').delete().eq('id', id).eq('user_id', uid);
   }
 
-  // 5. CRUD Compromisos
+  // 5. Compromisos a Plazos
   function handleOpenNewCompromiso() {
     setEditingCompromisoId(null);
     setCompName('');
@@ -660,7 +683,7 @@ export default function App() {
   function handleOpenEditCompromiso(c) {
     setEditingCompromisoId(c.id);
     setCompName(c.name);
-    setCompAmount(c.amount.toString());
+    setCompAmount(formatInputNumber(c.amount));
     setCompDueDay(c.dueDay.toString());
     setCompCurrentMonth(c.currentMonth.toString());
     setCompTotalMonths(c.totalMonths.toString());
@@ -671,7 +694,7 @@ export default function App() {
     e.preventDefault();
     if (!session?.user) return;
     const uid = session.user.id;
-    const amtNum = parseFloat(compAmount) || 0;
+    const amtNum = parseInputNumber(compAmount);
     const dueNum = parseInt(compDueDay) || 1;
     const currMNum = parseInt(compCurrentMonth) || 1;
     const totMNum = parseInt(compTotalMonths) || 1;
@@ -703,6 +726,49 @@ export default function App() {
     setIsCompromisoModalOpen(false);
   }
 
+  // Acción: Marcar Mensualidad Pagada de Compromiso
+  async function handlePayCompromisoMonth(c) {
+    if (!session?.user) return;
+    if (!window.confirm(`¿Registrar el pago de ${formatMXN(c.amount)} del mes ${c.currentMonth} para "${c.name}"? Se registrará en tu historial de gastos.`)) return;
+
+    const uid = session.user.id;
+    const newTotal = Math.max(0, data.totalMoney - c.amount);
+    const hoyStr = new Date().toISOString().split('T')[0];
+
+    const newTx = {
+      id: `tx_${Date.now()}`,
+      user_id: uid,
+      type: 'gasto',
+      amount: c.amount,
+      concept: `Pago compromiso: ${c.name} (${c.currentMonth}/${c.totalMonths})`,
+      date: hoyStr,
+      origin: 'Compromiso a plazos',
+    };
+
+    const nextMonth = c.currentMonth + 1;
+    const isCompleted = nextMonth > c.totalMonths;
+
+    const updatedComps = isCompleted
+      ? data.compromisos.filter((item) => item.id !== c.id)
+      : data.compromisos.map((item) => (item.id === c.id ? { ...item, currentMonth: nextMonth } : item));
+
+    setData((prev) => ({
+      ...prev,
+      totalMoney: newTotal,
+      compromisos: updatedComps,
+      transactions: [newTx, ...prev.transactions],
+    }));
+
+    await supabase.from('transactions').insert(newTx);
+    await supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } });
+
+    if (isCompleted) {
+      await supabase.from('compromisos').delete().eq('id', c.id).eq('user_id', uid);
+    } else {
+      await supabase.from('compromisos').update({ current_month: nextMonth }).eq('id', c.id).eq('user_id', uid);
+    }
+  }
+
   async function handleDeleteCompromiso(id) {
     if (!window.confirm('¿Eliminar este compromiso?')) return;
     const uid = session?.user?.id;
@@ -713,7 +779,7 @@ export default function App() {
     await supabase.from('compromisos').delete().eq('id', id).eq('user_id', uid);
   }
 
-  // 6. CRUD Transacciones (Eliminar / Revertir)
+  // 6. Transacciones (Eliminar / Revertir)
   async function handleDeleteTransaction(tx) {
     if (!window.confirm(`¿Eliminar la transacción "${tx.concept}"?`)) return;
     const uid = session?.user?.id;
@@ -735,20 +801,20 @@ export default function App() {
     await supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotalMoney, monthlyBaseBurn: data.monthlyBaseBurn } });
   }
 
-  // 7. Registrar Transacción Rápida
-  const handleSaveTransaction = async (e) => {
+  // 7. Registro Rápido Modal (+)
+  const handleSaveQuickTransaction = async (e) => {
     e.preventDefault();
-    const n = parseFloat(txAmount);
-    if (isNaN(n) || n <= 0) return;
+    const amt = parseInputNumber(txAmount);
+    if (amt <= 0 || !session?.user) return;
 
     const uid = session.user.id;
     const newTxId = `tx_${Date.now()}`;
-    const hoyStr = new Date().toISOString().split('T')[0];
+    const dateStr = txDate || new Date().toISOString().split('T')[0];
 
     if (txType === 'gasto') {
       if (txOrigin === 'disponible') {
-        const newTotal = Math.max(0, data.totalMoney - n);
-        const newTx = { id: newTxId, user_id: uid, type: 'gasto', amount: n, concept: txConcept || 'Gasto libre', date: hoyStr, origin: 'Disponible Libre' };
+        const newTotal = Math.max(0, data.totalMoney - amt);
+        const newTx = { id: newTxId, user_id: uid, type: 'gasto', amount: amt, concept: txConcept || 'Gasto libre', date: dateStr, origin: 'Disponible Libre' };
         
         setData((prev) => ({
           ...prev,
@@ -759,10 +825,10 @@ export default function App() {
         supabase.from('transactions').insert(newTx).catch(console.error);
         supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } }).catch(console.error);
       } else {
-        const newTotal = Math.max(0, data.totalMoney - n);
+        const newTotal = Math.max(0, data.totalMoney - amt);
         const targetAp = data.apartados.find((a) => a.id === txOrigin);
-        const newCurrent = Math.max(0, (targetAp?.current || 0) - n);
-        const newTx = { id: newTxId, user_id: uid, type: 'gasto', amount: n, concept: txConcept || 'Gasto de apartado', date: hoyStr, origin: `Apartado: ${targetAp?.name || ''}` };
+        const newCurrent = Math.max(0, (targetAp?.current || 0) - amt);
+        const newTx = { id: newTxId, user_id: uid, type: 'gasto', amount: amt, concept: txConcept || 'Gasto de apartado', date: dateStr, origin: `Apartado: ${targetAp?.name || ''}` };
 
         setData((prev) => ({
           ...prev,
@@ -776,28 +842,38 @@ export default function App() {
         supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } }).catch(console.error);
       }
     } else {
+      // Ingreso
+      const isRec = txPeriod !== 'unico';
+      const newIng = {
+        id: `ing_${Date.now()}`,
+        user_id: uid,
+        name: txConcept || 'Ingreso registrado',
+        amount: amt,
+        certainty: txCertainty,
+        date: dateStr,
+        period: txPeriod,
+        is_recurring: isRec,
+      };
+
+      let newTotal = data.totalMoney;
+      let newTxList = data.transactions;
+
       if (txCertainty === 'confirmado') {
-        const newTotal = data.totalMoney + n;
-        const newTx = { id: newTxId, user_id: uid, type: 'ingreso', amount: n, concept: txConcept || 'Ingreso', date: hoyStr, origin: 'Confirmado' };
-
-        setData((prev) => ({
-          ...prev,
-          totalMoney: newTotal,
-          transactions: [newTx, ...prev.transactions],
-        }));
-
-        supabase.from('transactions').insert(newTx).catch(console.error);
-        supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } }).catch(console.error);
-      } else {
-        const newIng = { id: newTxId, user_id: uid, name: txConcept || 'Ingreso proyectado', amount: n, certainty: txCertainty, date: hoyStr, period: 'unico', is_recurring: false };
-
-        setData((prev) => ({
-          ...prev,
-          ingresosVariables: [...prev.ingresosVariables, { ...newIng, isRecurring: false }],
-        }));
-
-        supabase.from('ingresos_variables').insert(newIng).catch(console.error);
+        newTotal = data.totalMoney + amt;
+        const newTx = { id: newTxId, user_id: uid, type: 'ingreso', amount: amt, concept: txConcept || 'Ingreso', date: dateStr, origin: 'Confirmado' };
+        newTxList = [newTx, ...data.transactions];
+        await supabase.from('transactions').insert(newTx);
+        await supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: newTotal, monthlyBaseBurn: data.monthlyBaseBurn } });
       }
+
+      setData((prev) => ({
+        ...prev,
+        totalMoney: newTotal,
+        transactions: newTxList,
+        ingresosVariables: [...prev.ingresosVariables, { ...newIng, isRecurring: isRec }],
+      }));
+
+      await supabase.from('ingresos_variables').insert(newIng);
     }
 
     setTxAmount('');
@@ -808,9 +884,10 @@ export default function App() {
   // 8. Ajustar Base de Supervivencia
   const handleSaveBaseBurn = async (e) => {
     e.preventDefault();
+    if (!session?.user) return;
     const uid = session.user.id;
-    const newBurn = parseFloat(monthlyBurnInput);
-    if (!isNaN(newBurn) && newBurn >= 0) {
+    const newBurn = parseInputNumber(monthlyBurnInput);
+    if (newBurn >= 0) {
       setData((prev) => ({ ...prev, monthlyBaseBurn: newBurn }));
       await supabase.from('settings').upsert({ user_id: uid, key: 'main_config', value: { totalMoney: data.totalMoney, monthlyBaseBurn: newBurn } });
     }
@@ -820,10 +897,11 @@ export default function App() {
   // 9. Ajustar Saldo Real
   const handleAdjustBalance = async (e) => {
     e.preventDefault();
+    if (!session?.user) return;
     const uid = session.user.id;
-    const newBal = parseFloat(realBalance);
+    const newBal = parseInputNumber(realBalance);
 
-    if (!isNaN(newBal) && newBal >= 0) {
+    if (newBal >= 0) {
       const newTx = { id: `tx_${Date.now()}`, user_id: uid, type: 'ajuste', amount: newBal, concept: 'Ajuste manual de saldo', date: new Date().toISOString().split('T')[0], origin: 'Sistema' };
       setData((prev) => ({
         ...prev,
@@ -837,7 +915,6 @@ export default function App() {
     setIsAdjustModalOpen(false);
   };
 
-  // ─── DÍAS DEL MES PARA EL CALENDARIO FINANCIERO ──────────────────────────
   const daysInMonth = new Date(ANIO_ACTUAL, NUM_MES_ACTUAL + 1, 0).getDate();
   const calendarDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
@@ -871,7 +948,7 @@ export default function App() {
           <div className="flex items-center gap-1">
             <button
               onClick={() => {
-                setRealBalance(data.totalMoney.toString());
+                setRealBalance(formatInputNumber(data.totalMoney));
                 setIsAdjustModalOpen(true);
               }}
               className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-full transition"
@@ -900,7 +977,7 @@ export default function App() {
               <button
                 onClick={seedTemplateData}
                 className="text-[10px] text-sky-400 hover:underline font-semibold flex items-center gap-0.5"
-                title="Cargar datos de ejemplo de David"
+                title="Cargar datos de ejemplo"
               >
                 <RotateCcw size={10} /> Cargar Plantilla Demo
               </button>
@@ -917,7 +994,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── MAIN ───────────────────────────────────────────────────── */}
+        {/* ── MAIN CONTENT ───────────────────────────────────────────── */}
         <main className="flex-1 p-4 overflow-y-auto space-y-4">
 
           {/* ═══════════════════════════════════════════════════════════ */}
@@ -990,7 +1067,16 @@ export default function App() {
                         <p className="font-medium text-slate-200">{c.name}</p>
                         <p className="text-[10px] text-slate-500">Vence día {c.dueDay} • Mes {c.currentMonth} de {c.totalMonths}</p>
                       </div>
-                      <span className="font-semibold text-slate-300">-{formatMXN(c.amount)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-300">-{formatMXN(c.amount)}</span>
+                        <button
+                          onClick={() => handlePayCompromisoMonth(c)}
+                          className="py-1 px-2 bg-orange-500/20 text-orange-300 rounded text-[10px] font-bold border border-orange-500/30 hover:bg-orange-500/30"
+                          title="Registrar pago de la mensualidad de este mes"
+                        >
+                          Pagar mes
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {data.compromisos.length === 0 && (
@@ -1055,7 +1141,7 @@ export default function App() {
           {activeTab === 'apartados' && (
             <div className="space-y-4">
 
-              {/* Tarjeta de Resumen Apartados */}
+              {/* Resumen Apartados */}
               <div className="p-4 rounded-xl bg-indigo-950/30 border border-indigo-500/20 flex justify-between items-center">
                 <div>
                   <span className="text-xs text-indigo-300 font-medium">Total Apartado y Protegido</span>
@@ -1257,8 +1343,8 @@ export default function App() {
                         <span className="font-semibold text-amber-300">{formatMXN(i.amount)}</span>
                         <button
                           onClick={() => handleConfirmPayment(i)}
-                          className="py-0.5 px-1.5 bg-emerald-500/20 text-emerald-300 rounded text-[9px] font-bold border border-emerald-500/30 hover:bg-emerald-500/30"
-                          title="Marcar como dinero cobrado y sumarlo al disponible"
+                          className="py-0.5 px-2 bg-emerald-500/20 text-emerald-300 rounded text-[10px] font-bold border border-emerald-500/30 hover:bg-emerald-500/30"
+                          title="Confirmar que ya cayó el pago y pasarlo a Ingreso Seguro"
                         >
                           ¡Ya cobré!
                         </button>
@@ -1288,8 +1374,8 @@ export default function App() {
                         <span className="font-semibold text-slate-400">{formatMXN(i.amount)}</span>
                         <button
                           onClick={() => handleConfirmPayment(i)}
-                          className="py-0.5 px-1.5 bg-emerald-500/20 text-emerald-300 rounded text-[9px] font-bold border border-emerald-500/30 hover:bg-emerald-500/30"
-                          title="Marcar como dinero cobrado"
+                          className="py-0.5 px-2 bg-emerald-500/20 text-emerald-300 rounded text-[10px] font-bold border border-emerald-500/30 hover:bg-emerald-500/30"
+                          title="Confirmar cobro"
                         >
                           ¡Ya cobré!
                         </button>
@@ -1324,11 +1410,11 @@ export default function App() {
                     <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2 text-[11px] text-slate-300">
                       <div className="flex items-start gap-2">
                         <span className="text-emerald-400 font-bold shrink-0">🟢 Seguro:</span>
-                        <span>Dinero ya en tu cuenta o garantizado. Es el <strong>único</strong> que calcula tu semáforo.</span>
+                        <span>Dinero ya en tu cuenta o garantizado. Es el <strong>único</strong> que calcula tu semáforo de estabilidad.</span>
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="text-amber-400 font-bold shrink-0">🟡 Esperado:</span>
-                        <span>Trabajo ya pactado con fecha próxima (ej. flete acordado), pero que aún no se deposita.</span>
+                        <span>Trabajo ya pactado con fecha próxima (ej. flete acordado). Al presionar <strong>"¡Ya cobré!"</strong> se transfiere a Seguro y a tu saldo.</span>
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="text-slate-400 font-bold shrink-0">⚪ Posible:</span>
@@ -1348,7 +1434,7 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => {
-                      setMonthlyBurnInput(data.monthlyBaseBurn.toString());
+                      setMonthlyBurnInput(formatInputNumber(data.monthlyBaseBurn));
                       setIsBaseBurnModalOpen(true);
                     }}
                     className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 transition"
@@ -1409,15 +1495,15 @@ export default function App() {
                       <label className="text-[11px] font-semibold text-slate-400 block mb-1">
                         Si consigo un ingreso mensual de…
                       </label>
-                      <div className="flex gap-2">
+                      <div className="relative">
+                        <span className="absolute left-3 top-2 text-sm font-bold text-slate-500">$</span>
                         <input
                           type="text"
-                          placeholder="Ej. 12000"
+                          placeholder="12,000"
                           value={scenarioInput}
-                          onChange={(e) => setScenarioInput(sanitizeNumber(e.target.value))}
-                          className="flex-1 text-lg font-bold bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+                          onChange={(e) => setScenarioInput(formatInputNumber(e.target.value))}
+                          className="w-full text-lg font-bold bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-white focus:outline-none focus:border-violet-500"
                         />
-                        <span className="flex items-center text-xs text-slate-400 pr-1">MXN</span>
                       </div>
                     </div>
 
@@ -1485,11 +1571,11 @@ export default function App() {
                   {data.compromisos.map((c) => {
                     const mesesRestantes = c.totalMonths - c.currentMonth + 1;
                     return (
-                      <div key={c.id} className="text-xs flex justify-between items-start py-1.5 border-b border-slate-800/60 last:border-0">
+                      <div key={c.id} className="text-xs flex justify-between items-start py-2 border-b border-slate-800/60 last:border-0">
                         <div>
                           <p className="font-medium text-slate-300">{c.name}</p>
                           <p className="text-[10px] text-slate-500">
-                            Mes {c.currentMonth} de {c.totalMonths} • Quedan {mesesRestantes} pagos (Día {c.dueDay})
+                            Mes {c.currentMonth} de {c.totalMonths} • Quedan {mesesRestantes} pagos (Vence día {c.dueDay})
                           </p>
                         </div>
                         <div className="text-right flex items-center gap-2">
@@ -1498,6 +1584,13 @@ export default function App() {
                             <p className="text-[10px] text-slate-500">Total: {formatMXN(c.amount * mesesRestantes)}</p>
                           </div>
                           <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handlePayCompromisoMonth(c)}
+                              className="py-0.5 px-2 bg-orange-500/20 text-orange-300 rounded text-[10px] font-bold border border-orange-500/30 hover:bg-orange-500/30"
+                              title="Pagar mensualidad"
+                            >
+                              Pagar
+                            </button>
                             <button onClick={() => handleOpenEditCompromiso(c)} className="text-slate-500 hover:text-sky-400 p-1"><Edit2 size={12} /></button>
                             <button onClick={() => handleDeleteCompromiso(c.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={12} /></button>
                           </div>
@@ -1520,7 +1613,7 @@ export default function App() {
           {activeTab === 'calendario' && (
             <div className="space-y-4">
 
-              {/* Header Calendario */}
+              {/* Cuadrícula Calendario */}
               <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
@@ -1532,7 +1625,6 @@ export default function App() {
                   <span className="text-[10px] text-slate-500">Hoy: Día {HOY_DIA}</span>
                 </div>
 
-                {/* Grid Visual de Días */}
                 <div className="grid grid-cols-7 gap-1 text-center text-xs">
                   {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((d, i) => (
                     <span key={i} className="text-[10px] font-bold text-slate-600 pb-1">{d}</span>
@@ -1540,9 +1632,7 @@ export default function App() {
 
                   {calendarDays.map((day) => {
                     const isToday = day === HOY_DIA;
-                    // Buscar si hay compromisos este día
                     const compsOnDay = data.compromisos.filter((c) => c.dueDay === day);
-                    // Buscar si hay ingresos proyectados este día
                     const ingsOnDay = data.ingresosVariables.filter((ing) => {
                       const d = new Date(ing.date).getDate();
                       return d === day;
@@ -1579,7 +1669,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Cronograma de Eventos Próximos */}
+              {/* Cronograma Mensual */}
               <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
                 <div className="flex items-center gap-2">
                   <Clock size={14} className="text-sky-400" />
@@ -1587,7 +1677,6 @@ export default function App() {
                 </div>
 
                 <div className="space-y-2">
-                  {/* Compromisos ordenados por día */}
                   {[...data.compromisos].sort((a, b) => a.dueDay - b.dueDay).map((c) => {
                     const isPassed = c.dueDay < HOY_DIA;
                     return (
@@ -1605,12 +1694,19 @@ export default function App() {
                             </p>
                           </div>
                         </div>
-                        <span className="font-bold text-orange-400">-{formatMXN(c.amount)}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-orange-400">-{formatMXN(c.amount)}</span>
+                          <button
+                            onClick={() => handlePayCompromisoMonth(c)}
+                            className="py-0.5 px-2 bg-orange-500/20 text-orange-300 rounded text-[10px] font-bold border border-orange-500/30 hover:bg-orange-500/30"
+                          >
+                            Pagar
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
 
-                  {/* Ingresos proyectados */}
                   {data.ingresosVariables.map((ing) => (
                     <div key={ing.id} className="flex justify-between items-center p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 text-xs">
                       <div className="flex items-center gap-2.5">
@@ -1635,7 +1731,7 @@ export default function App() {
                             onClick={() => handleConfirmPayment(ing)}
                             className="py-0.5 px-2 bg-emerald-500/20 text-emerald-300 rounded text-[10px] font-bold border border-emerald-500/30"
                           >
-                            Cobrar
+                            ¡Ya cobré!
                           </button>
                         )}
                       </div>
@@ -1705,7 +1801,7 @@ export default function App() {
                       type="text"
                       placeholder="0.00"
                       value={apTarget}
-                      onChange={(e) => setApTarget(sanitizeNumber(e.target.value))}
+                      onChange={(e) => setApTarget(formatInputNumber(e.target.value))}
                       required
                       className="w-full text-sm font-bold bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-white focus:outline-none focus:border-sky-500"
                     />
@@ -1778,7 +1874,7 @@ export default function App() {
                       placeholder="0.00"
                       value={fundAmount}
                       onChange={(e) => {
-                        setFundAmount(sanitizeNumber(e.target.value));
+                        setFundAmount(formatInputNumber(e.target.value));
                         setFundError('');
                       }}
                       autoFocus
@@ -1837,7 +1933,7 @@ export default function App() {
                       type="text"
                       placeholder="0.00"
                       value={ingAmount}
-                      onChange={(e) => setIngAmount(sanitizeNumber(e.target.value))}
+                      onChange={(e) => setIngAmount(formatInputNumber(e.target.value))}
                       required
                       className="w-full text-sm font-bold bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-white focus:outline-none focus:border-sky-500"
                     />
@@ -1851,7 +1947,7 @@ export default function App() {
                     onChange={(e) => setIngCertainty(e.target.value)}
                     className="w-full text-xs bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500"
                   >
-                    <option value="confirmado">🟢 Confirmado (Ya asegurado / contratado)</option>
+                    <option value="confirmado">🟢 Confirmado (Ya asegurado / suma a dinero real)</option>
                     <option value="esperado">🟡 Esperado (Fecha aprox. / pactado)</option>
                     <option value="posible">⚪ Posible (En proceso / entrevista)</option>
                   </select>
@@ -1927,9 +2023,9 @@ export default function App() {
                       <span className="absolute left-2.5 top-2 text-xs font-bold text-slate-500">$</span>
                       <input
                         type="text"
-                        placeholder="1000"
+                        placeholder="1,000"
                         value={compAmount}
-                        onChange={(e) => setCompAmount(sanitizeNumber(e.target.value))}
+                        onChange={(e) => setCompAmount(formatInputNumber(e.target.value))}
                         required
                         className="w-full text-xs font-bold bg-slate-950 border border-slate-800 rounded-xl pl-6 pr-2 py-2 text-white focus:outline-none focus:border-sky-500"
                       />
@@ -2000,7 +2096,7 @@ export default function App() {
               </div>
 
               <p className="text-xs text-slate-400 leading-relaxed">
-                Es la cantidad mensual mínima que necesitas para vivir: comida indispensable, techo/renta, transporte y servicios vitales.
+                Cantidad mensual mínima que necesitas para vivir: comida básica, techo/renta, transporte indispensable y servicios vitales.
               </p>
 
               <form onSubmit={handleSaveBaseBurn} className="space-y-3">
@@ -2010,9 +2106,9 @@ export default function App() {
                     <span className="absolute left-3 top-2.5 text-sm font-bold text-slate-500">$</span>
                     <input
                       type="text"
-                      placeholder="4000"
+                      placeholder="4,000"
                       value={monthlyBurnInput}
-                      onChange={(e) => setMonthlyBurnInput(sanitizeNumber(e.target.value))}
+                      onChange={(e) => setMonthlyBurnInput(formatInputNumber(e.target.value))}
                       required
                       className="w-full text-lg font-bold bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-white focus:outline-none focus:border-sky-500"
                     />
@@ -2022,15 +2118,15 @@ export default function App() {
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
                   <div className="flex justify-between">
                     <span>Base indispensable:</span>
-                    <span className="text-slate-200">{formatMXN(parseFloat(monthlyBurnInput) || 0)}</span>
+                    <span className="text-slate-200">{formatMXN(parseInputNumber(monthlyBurnInput))}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>+ Compromisos fijos:</span>
+                    <span>+ Compromisos fijos del mes:</span>
                     <span className="text-orange-400">+{formatMXN(totalCompromisosMes)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-slate-200 pt-1 border-t border-slate-800">
                     <span>Mínimo Total Resultante:</span>
-                    <span className="text-sky-300">{formatMXN((parseFloat(monthlyBurnInput) || 0) + totalCompromisosMes + gastosRecurrentesApartados)}</span>
+                    <span className="text-sky-300">{formatMXN(parseInputNumber(monthlyBurnInput) + totalCompromisosMes + gastosRecurrentesApartados)}</span>
                   </div>
                 </div>
 
@@ -2089,13 +2185,13 @@ export default function App() {
           </div>
         )}
 
-        {/* ── MODAL: REGISTRO RÁPIDO (+) ──────────────────────────────── */}
+        {/* ── MODAL: REGISTRO RÁPIDO UNIFICADO (+) ─────────────────────── */}
         {isModalOpen && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <div className="bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md space-y-4 shadow-2xl">
               <div className="flex justify-between items-center pb-2 border-b border-slate-800">
                 <h3 className="font-bold text-sm text-slate-100">Registro Rápido</h3>
-                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-1">
+                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white">
                   <X size={18} />
                 </button>
               </div>
@@ -2117,7 +2213,7 @@ export default function App() {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveTransaction} className="space-y-3.5">
+              <form onSubmit={handleSaveQuickTransaction} className="space-y-3.5">
                 <div>
                   <label className="text-[11px] font-semibold text-slate-400 block mb-1">Monto ($ MXN)</label>
                   <div className="relative">
@@ -2126,7 +2222,7 @@ export default function App() {
                       type="text"
                       placeholder="0.00"
                       value={txAmount}
-                      onChange={(e) => setTxAmount(sanitizeNumber(e.target.value))}
+                      onChange={(e) => setTxAmount(formatInputNumber(e.target.value))}
                       autoFocus
                       required
                       className="w-full text-2xl font-bold bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2.5 text-white focus:outline-none focus:border-sky-500"
@@ -2135,12 +2231,13 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Concepto (Opcional)</label>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Concepto</label>
                   <input
                     type="text"
-                    placeholder="Ej. Comida, Gasolina, Pago recibido"
+                    placeholder="Ej. Comida, Gasolina, Pago de flete"
                     value={txConcept}
                     onChange={(e) => setTxConcept(e.target.value)}
+                    required
                     className="w-full text-xs bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
                   />
                 </div>
@@ -2162,17 +2259,45 @@ export default function App() {
                     </select>
                   </div>
                 ) : (
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">Nivel de Certeza</label>
-                    <select
-                      value={txCertainty}
-                      onChange={(e) => setTxCertainty(e.target.value)}
-                      className="w-full text-xs bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
-                    >
-                      <option value="confirmado">🟢 Confirmado (Ya en mano / banco)</option>
-                      <option value="esperado">🟡 Esperado (Flete pactado / fecha aprox)</option>
-                      <option value="posible">⚪ Posible (En proceso / entrevista)</option>
-                    </select>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-400 block mb-1">Nivel de Certeza</label>
+                      <select
+                        value={txCertainty}
+                        onChange={(e) => setTxCertainty(e.target.value)}
+                        className="w-full text-xs bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                      >
+                        <option value="confirmado">🟢 Confirmado (Ya en mano / banco)</option>
+                        <option value="esperado">🟡 Esperado (Flete pactado / fecha aprox)</option>
+                        <option value="posible">⚪ Posible (En proceso / entrevista)</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-400 block mb-1">Fecha</label>
+                        <input
+                          type="date"
+                          value={txDate}
+                          onChange={(e) => setTxDate(e.target.value)}
+                          required
+                          className="w-full text-xs bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-slate-200 focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-400 block mb-1">Periodo</label>
+                        <select
+                          value={txPeriod}
+                          onChange={(e) => setTxPeriod(e.target.value)}
+                          className="w-full text-xs bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-slate-200 focus:outline-none focus:border-sky-500"
+                        >
+                          <option value="unico">Pago Único</option>
+                          <option value="semanal">Semanal</option>
+                          <option value="quincenal">Quincenal</option>
+                          <option value="mensual">Mensual</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2180,7 +2305,7 @@ export default function App() {
                   type="submit"
                   className="w-full py-3 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold rounded-xl text-sm transition mt-2 shadow-lg shadow-sky-500/20"
                 >
-                  Guardar
+                  Guardar Movimiento
                 </button>
               </form>
             </div>
@@ -2198,7 +2323,7 @@ export default function App() {
                 </button>
               </div>
               <p className="text-xs text-slate-400">
-                ¿Olvidaste registrar gastos? Escribe el total de dinero real que tienes hoy en cuenta y mano:
+                Escribe el total de dinero real que tienes hoy en cuenta y mano:
               </p>
               <form onSubmit={handleAdjustBalance} className="space-y-3">
                 <div className="relative">
@@ -2207,7 +2332,7 @@ export default function App() {
                     type="text"
                     placeholder={`Saldo actual: ${formatMXN(data.totalMoney)}`}
                     value={realBalance}
-                    onChange={(e) => setRealBalance(sanitizeNumber(e.target.value))}
+                    onChange={(e) => setRealBalance(formatInputNumber(e.target.value))}
                     className="w-full text-xl font-bold bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2.5 text-white focus:outline-none focus:border-sky-500"
                     required
                   />
