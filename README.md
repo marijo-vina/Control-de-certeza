@@ -20,14 +20,14 @@ Aplicación web progresiva diseñada para el control financiero, reducción de a
 
 ## Actividad 3.3 — WebSockets
 
-La vista de la actividad la sirve Express, no los formularios de la app. En una terminal:
+`npm start` abre la misma app de Control de Certeza en el puerto 3000. En Hoy aparece la lista de productos, que cambia cuando Postman escribe en la API. El resto de las pestañas no cambia.
 
 ```bash
 npm install
 npm start
 ```
 
-Abre http://localhost:3000. La consola del navegador debe decir `Socket conectado` y mostrar los productos actuales. Desde Postman, sin recargar esa página:
+Abre http://localhost:3000, entra a tu cuenta y deja Hoy abierto. En la consola del navegador debe decir `Socket conectado`. Desde Postman, sin recargar:
 
 - `POST http://localhost:3000/api/productos` con `{ "nombre": "Café", "precio": 45, "descripcion": "Taza" }`
 - `PUT http://localhost:3000/api/productos/:id`

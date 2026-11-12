@@ -1,16 +1,13 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "node:http";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
+import { createServer as createViteServer } from "vite";
 import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import prismaPkg from "@prisma/client";
 
 const { PrismaClient } = prismaPkg;
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 
 if (!process.env.DATABASE_URL) {
@@ -23,10 +20,9 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
 
 const server = createServer(app);
-const sockets = new WebSocketServer({ server });
+const sockets = new WebSocketServer({ server, path: "/ws" });
 
 function productoJson(row) {
   return {
@@ -110,6 +106,12 @@ app.delete("/api/productos/:id", async (req, res) => {
   return res.json({ eliminado: true, id: req.params.id });
 });
 
+const vite = await createViteServer({
+  server: { middlewareMode: true },
+  appType: "spa",
+});
+app.use(vite.middlewares);
+
 server.listen(PORT, () => {
-  console.log(`API y vista listas en http://localhost:${PORT}`);
+  console.log(`App y API listas en http://localhost:${PORT}`);
 });

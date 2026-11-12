@@ -196,6 +196,46 @@ export default function App() {
 
   // Guía de Certeza Colapsable
   const [showCertaintyGuide, setShowCertaintyGuide] = useState(false);
+  const [productos, setProductos] = useState([]);
+  const [socketEstado, setSocketEstado] = useState('conectando');
+
+  useEffect(() => {
+    const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+    const socket = new WebSocket(`${protocol}://${location.host}/ws`);
+
+    socket.addEventListener('open', () => {
+      console.log('Socket conectado');
+      setSocketEstado('conectado');
+    });
+
+    socket.addEventListener('message', (event) => {
+      const mensaje = JSON.parse(event.data);
+
+      if (mensaje.evento === 'conectado') {
+        console.log('Registros actuales:', mensaje.productos);
+        setProductos(mensaje.productos);
+      }
+      if (mensaje.evento === 'insertado') {
+        console.log('Inserción recibida:', mensaje.producto);
+        setProductos((prev) => [...prev.filter((p) => p.id !== mensaje.producto.id), mensaje.producto]);
+      }
+      if (mensaje.evento === 'actualizado') {
+        console.log('Actualización recibida:', mensaje.producto);
+        setProductos((prev) => prev.map((p) => (p.id === mensaje.producto.id ? mensaje.producto : p)));
+      }
+      if (mensaje.evento === 'eliminado') {
+        console.log('Eliminación recibida:', mensaje.id);
+        setProductos((prev) => prev.filter((p) => p.id !== mensaje.id));
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      console.log('Socket desconectado');
+      setSocketEstado('desconectado');
+    });
+
+    return () => socket.close();
+  }, []);
 
   // 1. Verificar Sesión de Usuario
   useEffect(() => {
@@ -940,6 +980,9 @@ export default function App() {
                     <CloudCheck size={12} />
                   </span>
                 )}
+                <span className={`text-[10px] font-bold ${socketEstado === 'conectado' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {socketEstado === 'conectado' ? 'En vivo' : 'Socket…'}
+                </span>
               </div>
               <h1 className="text-lg font-bold text-slate-100 leading-tight">Mi Realidad Financiera</h1>
             </div>
@@ -1002,6 +1045,30 @@ export default function App() {
           {/* ═══════════════════════════════════════════════════════════ */}
           {activeTab === 'hoy' && (
             <div className="space-y-4">
+
+              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Productos en vivo</span>
+                  <span className={`text-[10px] font-bold ${socketEstado === 'conectado' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {socketEstado === 'conectado' ? 'Socket conectado' : 'Conectando…'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">Esta lista se actualiza desde Postman. El resto de la app sigue igual.</p>
+                <div className="mt-3 space-y-2">
+                  {productos.length === 0 && (
+                    <p className="text-xs text-slate-500">Todavía no hay productos.</p>
+                  )}
+                  {productos.map((producto) => (
+                    <div key={producto.id} className="flex justify-between items-start gap-3 text-sm">
+                      <div>
+                        <p className="font-semibold text-slate-100">{producto.nombre}</p>
+                        <p className="text-[11px] text-slate-500">{producto.descripcion || 'Sin descripción'}</p>
+                      </div>
+                      <span className="font-bold text-sky-300">{formatMXN(producto.precio, true)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* Tarjeta principal: Disponible Libre */}
               <div className="p-5 rounded-2xl bg-gradient-to-br from-sky-900/40 via-slate-900 to-slate-900 border border-sky-500/30 shadow-lg">
