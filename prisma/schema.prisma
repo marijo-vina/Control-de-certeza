@@ -74,3 +74,15 @@ model Transaction {
   @@index([userId])
   @@map("transactions")
 }
+
+/// Tabla de la actividad 3.3. Postman inserta y modifica; la vista solo escucha.
+model Producto {
+  id          String   @id @default(uuid())
+  nombre      String
+  precio      Decimal  @db.Decimal(12, 2)
+  descripcion String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("productos")
+}

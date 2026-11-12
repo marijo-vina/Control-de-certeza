@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Actividad 3.3 — Productos en tiempo real</title>
+  <link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+  <main>
+    <p class="kicker">Actividad 3.3 · Prisma Postgres</p>
+    <h1>Productos</h1>
+    <p class="estado" id="estado">Conectando el WebSocket…</p>
+    <p class="nota">Esta vista solo muestra la tabla. La inserción, la modificación y la eliminación se hacen desde Postman.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Precio</th>
+          <th>Descripción</th>
+          <th>Actualizado</th>
+        </tr>
+      </thead>
+      <tbody id="filas">
+        <tr><td colspan="4">Esperando registros…</td></tr>
+      </tbody>
+    </table>
+  </main>
+  <script src="/cliente-socket.js"></script>
+</body>
+</html>
