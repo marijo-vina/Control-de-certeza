@@ -6,7 +6,8 @@ Aplicación web progresiva diseñada para el control financiero, reducción de a
 - **React + Vite**
 - **Tailwind CSS v4**
 - **Lucide React Icons**
-- **Supabase** (Auth con verificación de correo, PostgreSQL, Row Level Security)
+- **Supabase** (Auth con verificación de correo; la app todavía inicia sesión aquí)
+- **Prisma Postgres + Prisma ORM 7** (las tablas `settings`, `apartados`, `compromisos`, `ingresos_variables` y `transactions` ya viven en esta base)
 - **Netlify** (Despliegue y hosting SPA)
 
 ## ✨ Características Principales

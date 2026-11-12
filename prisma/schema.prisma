@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Configuración por usuario. La clave compuesta reemplaza el par user_id + key de Supabase.
+model Setting {
+  userId    String   @map("user_id")
+  key       String
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@id([userId, key])
+  @@map("settings")
+}
+
+model Apartado {
+  id        String   @id
+  userId    String   @map("user_id")
+  name      String
+  current   Decimal  @default(0) @db.Decimal(12, 2)
+  target    Decimal  @default(0) @db.Decimal(12, 2)
+  category  String?
+  type      String   @default("objetivo")
+  period    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("apartados")
+}
+
+model Compromiso {
+  id           String   @id
+  userId       String   @map("user_id")
+  name         String
+  amount       Decimal  @default(0) @db.Decimal(12, 2)
+  dueDay       Int      @default(1) @map("due_day")
+  currentMonth Int      @default(1) @map("current_month")
+  totalMonths  Int      @default(1) @map("total_months")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("compromisos")
+}
+
+model IngresoVariable {
+  id          String   @id
+  userId      String   @map("user_id")
+  name        String
+  amount      Decimal  @default(0) @db.Decimal(12, 2)
+  certainty   String   @default("posible")
+  date        String?
+  isRecurring Boolean? @default(false) @map("is_recurring")
+  period      String?  @default("unico")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("ingresos_variables")
+}
+
+model Transaction {
+  id        String   @id
+  userId    String   @map("user_id")
+  type      String
+  amount    Decimal  @default(0) @db.Decimal(12, 2)
+  concept   String?
+  date      String?
+  origin    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("transactions")
+}
