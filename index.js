@@ -107,7 +107,7 @@ app.delete("/api/productos/:id", async (req, res) => {
 });
 
 const vite = await createViteServer({
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, allowedHosts: true },
   appType: "spa",
 });
 app.use(vite.middlewares);
