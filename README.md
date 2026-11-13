@@ -6,7 +6,8 @@ Aplicación web progresiva diseñada para el control financiero, reducción de a
 - **React + Vite**
 - **Tailwind CSS v4**
 - **Lucide React Icons**
-- **Supabase** (Auth con verificación de correo, PostgreSQL, Row Level Security)
+- **Supabase** (Auth con verificación de correo; la app todavía inicia sesión aquí)
+- **Prisma Postgres + Prisma ORM 7** (las tablas `settings`, `apartados`, `compromisos`, `ingresos_variables` y `transactions` ya viven en esta base)
 - **Netlify** (Despliegue y hosting SPA)
 
 ## ✨ Características Principales
@@ -16,6 +17,23 @@ Aplicación web progresiva diseñada para el control financiero, reducción de a
 - **Pestaña Agenda**: Calendario mensual con días de corte de compromisos, fechas estimadas de cobro y línea de tiempo cronológica.
 - **Validación y Moneda Mexicana (MXN)** en todos los formularios y cifras.
 - **Seguridad**: Autenticación con verificación de correo electrónico y aislamiento de datos por usuario vía RLS.
+
+## Actividad 3.3 — WebSockets
+
+`npm start` abre la misma app de Control de Certeza en el puerto 3000. En Hoy aparece la lista de productos, que cambia cuando Postman escribe en la API. El resto de las pestañas no cambia.
+
+```bash
+npm install
+npm start
+```
+
+Abre http://localhost:3000, entra a tu cuenta y deja Hoy abierto. En la consola del navegador debe decir `Socket conectado`. Desde Postman, sin recargar:
+
+- `POST http://localhost:3000/api/productos` con `{ "nombre": "Café", "precio": 45, "descripcion": "Taza" }`
+- `PUT http://localhost:3000/api/productos/:id`
+- `DELETE http://localhost:3000/api/productos/:id`
+
+`DATABASE_URL` apunta a Prisma Postgres y se lee desde `.env`.
 
 ## 📦 Instalación y Desarrollo Local
 ```bash
